@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(45, 212, 168, 0.12), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(56, 120, 200, 0.1), transparent 50%),
+    linear-gradient(165deg, #0b1118 0%, #121a24 45%, #0e1620 100%);
+  color: #e8ecef;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition;
+  }
+
+  .btn-primary {
+    @apply bg-accent text-surface-950 hover:bg-accent/90;
+  }
+
+  .btn-ghost {
+    @apply border border-white/10 bg-white/5 text-surface-50 hover:bg-white/10;
+  }
+
+  .btn-danger {
+    @apply bg-danger/90 text-white hover:bg-danger;
+  }
+
+  .input {
+    @apply w-full rounded-md border border-white/10 bg-surface-950/60 px-3 py-2 text-sm text-surface-50 outline-none placeholder:text-white/35 focus:border-accent/50;
+  }
+
+  .label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-white/50;
+  }
+}
