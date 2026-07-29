@@ -1,8 +1,12 @@
 # Owling Center
 
-Native desktop control panel for developers — automate project startup, stream logs, monitor ports, track Git, link Jira, and keep project to-dos close.
+<p align="center">
+  <img src="resources/splash_screen.png" alt="Owling Center" width="420" />
+</p>
 
-**Brand:** Owling Center — *The power of wisdom*
+<p align="center"><strong>Owling Center</strong> — <em>The power of wisdom</em></p>
+
+Native desktop control panel for developers — automate project startup, stream logs, monitor ports, track Git, link Jira, and keep project to-dos close.
 
 ## Requirements
 
@@ -27,12 +31,18 @@ npm run dev
 
 ## Branding assets
 
-| File | Use |
-|------|-----|
-| [`resources/logo_transparrent.png`](resources/logo_transparrent.png) | App / window icon (transparent) |
-| [`resources/logo_white.png`](resources/logo_white.png) | Logo on white background |
-| [`resources/splash_screen.png`](resources/splash_screen.png) | Splash shown ≥1s on launch |
-| [`build/icon.ico`](build/icon.ico) | Windows installer / executable icon |
+<p align="center">
+  <img src="resources/logo_transparrent.png" alt="Logo (transparent)" height="96" />
+  &nbsp;&nbsp;&nbsp;
+  <img src="resources/logo_white.png" alt="Logo (white background)" height="96" />
+</p>
+
+| Preview | File | Use |
+|---------|------|-----|
+| <img src="resources/logo_transparrent.png" alt="transparent logo" height="48" /> | [`resources/logo_transparrent.png`](resources/logo_transparrent.png) | App / window icon |
+| <img src="resources/logo_white.png" alt="white logo" height="48" /> | [`resources/logo_white.png`](resources/logo_white.png) | Logo on white background |
+| <img src="resources/splash_screen.png" alt="splash" height="48" /> | [`resources/splash_screen.png`](resources/splash_screen.png) | Splash shown ≥1s on launch |
+| — | [`build/icon.ico`](build/icon.ico) | Windows installer / executable icon |
 
 ## Features
 
