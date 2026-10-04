@@ -18,7 +18,19 @@ import type {
   QuickActionResult,
   BackupResult,
   SessionNote,
-  TodoItem
+  TodoItem,
+  ClaudeUsageRange,
+  ClaudeUsageSummary,
+  ClaudeLimits,
+  ClaudeThread,
+  ClaudeThreadEvent,
+  ClaudePromptRequest,
+  ClaudePromptResult,
+  AppUpdateCheck,
+  AppUpdateDownloadResult,
+  AppUpdateDownloaded,
+  AppUpdateProgress,
+  AppUpdateStatus
 } from '../shared/types'
 
 const api = {
@@ -84,6 +96,28 @@ const api = {
     save: (settings: AppSettings): Promise<AppSettings> =>
       ipcRenderer.invoke('settings:save', settings)
   },
+  updater: {
+    status: (): Promise<AppUpdateStatus> => ipcRenderer.invoke('updater:status'),
+    check: (): Promise<AppUpdateCheck> => ipcRenderer.invoke('updater:check'),
+    download: (): Promise<AppUpdateDownloadResult> => ipcRenderer.invoke('updater:download'),
+    cancel: (): Promise<void> => ipcRenderer.invoke('updater:cancel'),
+    install: (): Promise<void> => ipcRenderer.invoke('updater:install'),
+    onProgress: (callback: (progress: AppUpdateProgress) => void): (() => void) => {
+      const handler = (_: IpcRendererEvent, progress: AppUpdateProgress): void => callback(progress)
+      ipcRenderer.on('updater:progress', handler)
+      return () => ipcRenderer.removeListener('updater:progress', handler)
+    },
+    onDownloaded: (callback: (info: AppUpdateDownloaded) => void): (() => void) => {
+      const handler = (_: IpcRendererEvent, info: AppUpdateDownloaded): void => callback(info)
+      ipcRenderer.on('updater:downloaded', handler)
+      return () => ipcRenderer.removeListener('updater:downloaded', handler)
+    },
+    onError: (callback: (error: { message: string }) => void): (() => void) => {
+      const handler = (_: IpcRendererEvent, error: { message: string }): void => callback(error)
+      ipcRenderer.on('updater:error', handler)
+      return () => ipcRenderer.removeListener('updater:error', handler)
+    }
+  },
   backup: {
     export: (): Promise<BackupResult> => ipcRenderer.invoke('backup:export'),
     import: (): Promise<BackupResult> => ipcRenderer.invoke('backup:import')
@@ -109,6 +143,26 @@ const api = {
       ipcRenderer.invoke('jira:moveToInProgress', issueKey),
     moveToInReview: (issueKey: string): Promise<JiraTransitionResult> =>
       ipcRenderer.invoke('jira:moveToInReview', issueKey)
+  },
+  claude: {
+    usage: (range: ClaudeUsageRange): Promise<ClaudeUsageSummary> =>
+      ipcRenderer.invoke('claude:usage', range),
+    limits: (): Promise<ClaudeLimits> => ipcRenderer.invoke('claude:limits'),
+    login: (): Promise<ClaudeLimits> => ipcRenderer.invoke('claude:login'),
+    logout: (): Promise<ClaudeLimits> => ipcRenderer.invoke('claude:logout'),
+    thread: (projectId: string): Promise<ClaudeThread> =>
+      ipcRenderer.invoke('claude:thread', projectId),
+    prompt: (request: ClaudePromptRequest): Promise<ClaudePromptResult> =>
+      ipcRenderer.invoke('claude:prompt', request),
+    stop: (projectId: string): Promise<boolean> => ipcRenderer.invoke('claude:stop', projectId),
+    respond: (projectId: string, id: string, allowed: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('claude:respond', projectId, id, allowed),
+    reset: (projectId: string): Promise<void> => ipcRenderer.invoke('claude:reset', projectId),
+    onEvent: (callback: (event: ClaudeThreadEvent) => void): (() => void) => {
+      const handler = (_: IpcRendererEvent, event: ClaudeThreadEvent): void => callback(event)
+      ipcRenderer.on('claude:event', handler)
+      return () => ipcRenderer.removeListener('claude:event', handler)
+    }
   }
 }
 

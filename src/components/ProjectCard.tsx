@@ -51,7 +51,7 @@ export function ProjectCard({
     <article
       onClick={onSelect}
       className={[
-        'group relative cursor-pointer rounded-xl border p-4 shadow-panel transition',
+        'group relative min-w-0 cursor-pointer rounded-xl border p-4 shadow-panel transition',
         selected
           ? 'border-accent/40 bg-accent-muted/40'
           : 'border-white/8 bg-surface-900/70 hover:border-white/20 hover:bg-surface-800/80'
@@ -120,15 +120,15 @@ export function ProjectCard({
           {busyPorts.map((p) => (
             <div
               key={p.port}
-              className="flex items-center justify-between gap-2 rounded-md border border-warn/30 bg-warn/10 px-2 py-1.5 text-xs text-warn"
+              className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-md border border-warn/30 bg-warn/10 px-2 py-1.5 text-xs text-warn"
             >
-              <span className="inline-flex items-center gap-1">
-                <AlertTriangle size={12} />
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <AlertTriangle size={12} className="shrink-0" />
                 Port {p.port} in use{p.pid ? ` (PID ${p.pid})` : ''}
               </span>
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded bg-warn/20 px-2 py-0.5 text-[11px] font-medium hover:bg-warn/30"
+                className="inline-flex shrink-0 items-center gap-1 rounded bg-warn/20 px-2 py-0.5 text-[11px] font-medium hover:bg-warn/30"
                 onClick={(e) => {
                   e.stopPropagation()
                   onForceFree(p.port)

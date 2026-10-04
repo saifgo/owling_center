@@ -119,6 +119,44 @@ export interface BackupResult {
   }
 }
 
+export type AppUpdatePhase = 'idle' | 'available' | 'downloading' | 'downloaded' | 'error'
+
+export interface AppUpdateProgress {
+  percent: number
+  transferred: number
+  total: number
+  bytesPerSecond: number
+}
+
+export interface AppUpdateStatus {
+  currentVersion: string
+  packaged: boolean
+  phase: AppUpdatePhase
+  /** Latest remote version when an update was found. */
+  version?: string
+  progress?: AppUpdateProgress
+  error?: string
+}
+
+export interface AppUpdateCheck {
+  currentVersion: string
+  available: boolean
+  version?: string
+  /** True when the app is running from source, where updates cannot be installed. */
+  devOnly?: boolean
+  error?: string
+}
+
+export interface AppUpdateDownloadResult {
+  ok: boolean
+  cancelled?: boolean
+  error?: string
+}
+
+export interface AppUpdateDownloaded {
+  version: string
+}
+
 export interface JiraIssue {
   key: string
   summary: string
@@ -189,3 +227,126 @@ export type ProcessEvent =
   | { type: 'started'; process: ProcessInfo }
   | { type: 'exited'; processId: string; projectId: string; code: number | null }
   | { type: 'log'; chunk: LogChunk }
+
+export type ClaudeUsageRange = '24h' | '7d' | '30d' | '90d'
+
+export type ClaudeUsageMetric = 'cost' | 'tokens' | 'limits'
+
+export interface ClaudeTokenTotals {
+  uncachedInput: number
+  cachedInput: number
+  cacheCreation: number
+  output: number
+}
+
+export interface ClaudeUsageBucket {
+  key: string
+  label: string
+  costUsd: number
+  totalTokens: number
+}
+
+export interface ClaudeModelUsage {
+  model: string
+  costUsd: number
+  unpriced: boolean
+  totalTokens: number
+  tokens: ClaudeTokenTotals
+  sessions: number
+}
+
+export interface ClaudeUsageSummary {
+  range: ClaudeUsageRange
+  sinceLabel: string
+  untilLabel: string
+  sessions: number
+  costUsd: number
+  cacheSavingsUsd: number
+  tokens: ClaudeTokenTotals
+  totalTokens: number
+  /** Oldest first. Hourly for the past day, daily otherwise. */
+  buckets: ClaudeUsageBucket[]
+  models: ClaudeModelUsage[]
+  error?: string
+}
+
+export type ClaudeLimitKind = 'session' | 'weekly'
+
+export interface ClaudeLimitWindow {
+  id: string
+  kind: ClaudeLimitKind
+  label: string
+  /** 0–100, already consumed. */
+  usedPercent: number
+  windowDurationMins: number
+  resetsAt?: string
+}
+
+export type ClaudeAuthStatus = 'signed-out' | 'authenticated' | 'api-key' | 'unavailable' | 'missing-cli'
+
+export interface ClaudeLimits {
+  status: ClaudeAuthStatus
+  email?: string
+  plan?: string
+  checkedAt: string
+  windows: ClaudeLimitWindow[]
+  message?: string
+}
+
+export type ClaudeModelId = 'opus' | 'sonnet' | 'haiku'
+
+export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh'
+
+export type ClaudeAccessMode = 'supervised' | 'acceptEdits' | 'auto' | 'full'
+
+export type ClaudeMessageKind = 'user' | 'assistant' | 'thinking' | 'tool' | 'approval' | 'status' | 'error'
+
+export type ClaudeApprovalState = 'pending' | 'allowed' | 'denied'
+
+export interface ClaudeThreadMessage {
+  id: string
+  projectId: string
+  seq: number
+  kind: ClaudeMessageKind
+  text: string
+  toolName?: string
+  approval?: ClaudeApprovalState
+  createdAt: string
+}
+
+export interface ClaudeThread {
+  projectId: string
+  sessionId: string | null
+  cwd: string
+  running: boolean
+  messages: ClaudeThreadMessage[]
+}
+
+export interface ClaudePromptRequest {
+  projectId: string
+  prompt: string
+  model: ClaudeModelId
+  effort: ClaudeEffort
+  access: ClaudeAccessMode
+}
+
+export interface ClaudePromptResult {
+  ok: boolean
+  message?: string
+  sessionId?: string
+}
+
+export type ClaudeThreadEvent =
+  | { type: 'message'; projectId: string; message: ClaudeThreadMessage }
+  | { type: 'delta'; projectId: string; id: string; text: string }
+  | {
+      type: 'patch'
+      projectId: string
+      id: string
+      text?: string
+      toolName?: string
+      approval?: ClaudeApprovalState
+    }
+  | { type: 'cleared'; projectId: string }
+  | { type: 'done'; projectId: string }
+  | { type: 'error'; projectId: string; message: string }

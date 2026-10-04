@@ -4,7 +4,14 @@ import { join, dirname } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { createRequire } from 'module'
-import type { SessionNote, TodoItem } from '../../shared/types'
+import type {
+  ClaudeApprovalState,
+  ClaudeMessageKind,
+  ClaudeThread,
+  ClaudeThreadMessage,
+  SessionNote,
+  TodoItem
+} from '../../shared/types'
 
 const require = createRequire(__filename)
 
@@ -16,6 +23,24 @@ function persist(): void {
   const data = db.export()
   const buffer = Buffer.from(data)
   writeFileSync(dbPath, buffer)
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+
+function persistSoon(): void {
+  if (persistTimer) return
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    persist()
+  }, 400)
+}
+
+function persistNow(): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
+  persist()
 }
 
 function resolveWasm(file: string): string {
@@ -57,6 +82,26 @@ export async function initDb(): Promise<void> {
       id TEXT PRIMARY KEY,
       projectId TEXT NOT NULL,
       text TEXT NOT NULL,
+      createdAt TEXT NOT NULL
+    );
+  `)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS claude_threads (
+      projectId TEXT PRIMARY KEY,
+      sessionId TEXT,
+      cwd TEXT,
+      updatedAt TEXT NOT NULL
+    );
+  `)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS claude_messages (
+      id TEXT PRIMARY KEY,
+      projectId TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      text TEXT NOT NULL,
+      toolName TEXT,
+      approval TEXT,
       createdAt TEXT NOT NULL
     );
   `)
@@ -215,7 +260,129 @@ export function replaceAllSessionNotes(notes: SessionNote[]): void {
   persist()
 }
 
+const CLAUDE_KINDS = new Set<ClaudeMessageKind>([
+  'user',
+  'assistant',
+  'thinking',
+  'tool',
+  'approval',
+  'status',
+  'error'
+])
+
+function mapClaudeMessage(row: Record<string, unknown>): ClaudeThreadMessage {
+  const kind = String(row.kind)
+  const approval = row.approval ? String(row.approval) : undefined
+  return {
+    id: String(row.id),
+    projectId: String(row.projectId),
+    seq: Number(row.seq) || 0,
+    kind: CLAUDE_KINDS.has(kind as ClaudeMessageKind) ? (kind as ClaudeMessageKind) : 'status',
+    text: String(row.text ?? ''),
+    toolName: row.toolName ? String(row.toolName) : undefined,
+    approval:
+      approval === 'pending' || approval === 'allowed' || approval === 'denied'
+        ? approval
+        : undefined,
+    createdAt: String(row.createdAt)
+  }
+}
+
+export function getClaudeThread(projectId: string, running = false): ClaudeThread {
+  const threads = queryAll('SELECT * FROM claude_threads WHERE projectId = ?', [projectId])
+  const messages = queryAll(
+    'SELECT * FROM claude_messages WHERE projectId = ? ORDER BY seq ASC, createdAt ASC',
+    [projectId]
+  ).map(mapClaudeMessage)
+  const thread = threads[0]
+  return {
+    projectId,
+    sessionId: thread?.sessionId ? String(thread.sessionId) : null,
+    cwd: thread?.cwd ? String(thread.cwd) : '',
+    running,
+    messages
+  }
+}
+
+export function saveClaudeSession(projectId: string, sessionId: string, cwd: string): void {
+  const now = new Date().toISOString()
+  const existing = queryAll('SELECT projectId FROM claude_threads WHERE projectId = ?', [projectId])
+  if (existing.length === 0) {
+    requireDb().run(
+      'INSERT INTO claude_threads (projectId, sessionId, cwd, updatedAt) VALUES (?, ?, ?, ?)',
+      [projectId, sessionId, cwd, now]
+    )
+  } else {
+    requireDb().run(
+      'UPDATE claude_threads SET sessionId = ?, cwd = ?, updatedAt = ? WHERE projectId = ?',
+      [sessionId, cwd, now, projectId]
+    )
+  }
+  persistNow()
+}
+
+export function insertClaudeMessage(message: ClaudeThreadMessage): ClaudeThreadMessage {
+  requireDb().run(
+    `INSERT INTO claude_messages
+      (id, projectId, seq, kind, text, toolName, approval, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      message.id,
+      message.projectId,
+      message.seq,
+      message.kind,
+      message.text,
+      message.toolName ?? null,
+      message.approval ?? null,
+      message.createdAt
+    ]
+  )
+  persistNow()
+  return message
+}
+
+export function nextClaudeSeq(projectId: string): number {
+  const rows = queryAll('SELECT MAX(seq) AS seq FROM claude_messages WHERE projectId = ?', [
+    projectId
+  ])
+  return Number(rows[0]?.seq ?? 0) + 1
+}
+
+export function updateClaudeMessage(
+  id: string,
+  patch: { text?: string; toolName?: string; approval?: ClaudeApprovalState },
+  immediate = false
+): void {
+  const rows = queryAll('SELECT * FROM claude_messages WHERE id = ?', [id])
+  if (rows.length === 0) return
+  const row = rows[0]
+  const text = patch.text ?? String(row.text ?? '')
+  const toolName =
+    patch.toolName === undefined ? (row.toolName ? String(row.toolName) : null) : patch.toolName
+  const approval =
+    patch.approval === undefined ? (row.approval ? String(row.approval) : null) : patch.approval
+  requireDb().run('UPDATE claude_messages SET text = ?, toolName = ?, approval = ? WHERE id = ?', [
+    text,
+    toolName,
+    approval,
+    id
+  ])
+  if (immediate) persistNow()
+  else persistSoon()
+}
+
+export function clearClaudeThread(projectId: string): void {
+  const database = requireDb()
+  database.run('DELETE FROM claude_messages WHERE projectId = ?', [projectId])
+  database.run('DELETE FROM claude_threads WHERE projectId = ?', [projectId])
+  persistNow()
+}
+
 export function closeDb(): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
   if (db) {
     persist()
     db.close()

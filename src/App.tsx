@@ -4,6 +4,8 @@ import { Sidebar } from './components/Sidebar'
 import { ProjectCard } from './components/ProjectCard'
 import { LogDrawer } from './components/LogDrawer'
 import { SettingsModal } from './components/SettingsModal'
+import { ClaudeUsagePage } from './components/ClaudeUsagePage'
+import { ClaudePage } from './components/ClaudePage'
 import { QuickActionsBar } from './components/QuickActionsBar'
 import { useProjects } from './hooks/useProjects'
 import { useProcessEngine } from './hooks/useProcessEngine'
@@ -31,22 +33,32 @@ export default function App(): React.JSX.Element {
     refresh: refreshProjects
   } = useProjects()
 
-  const { processes, logs, launch, stopProject, stopAll, clearLogs } = useProcessEngine()
+  const { processes, logs, launch, stopProject, stopProcess, stopAll, clearLogs, clearProcessLogs } =
+    useProcessEngine()
 
   const logDrawerOpen = useUiStore((s) => s.logDrawerOpen)
   const setLogDrawerOpen = useUiStore((s) => s.setLogDrawerOpen)
+  const logDock = useUiStore((s) => s.logDock)
+  const setLogDock = useUiStore((s) => s.setLogDock)
+  const logDockHeight = useUiStore((s) => s.logDockHeight)
+  const logDockWidth = useUiStore((s) => s.logDockWidth)
+  const setLogDockHeight = useUiStore((s) => s.setLogDockHeight)
+  const setLogDockWidth = useUiStore((s) => s.setLogDockWidth)
   const settingsOpen = useUiStore((s) => s.settingsOpen)
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen)
   const editingProject = useUiStore((s) => s.editingProject)
   const setEditingProject = useUiStore((s) => s.setEditingProject)
   const toast = useUiStore((s) => s.toast)
   const setToast = useUiStore((s) => s.setToast)
+  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed)
+  const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed)
 
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultSettings)
   const [settingsTab, setSettingsTab] = useState<'project' | 'app' | 'actions'>('project')
   const [creatingBranches, setCreatingBranches] = useState(false)
   const [transitioning, setTransitioning] = useState(false)
   const [backupBusy, setBackupBusy] = useState(false)
+  const [view, setView] = useState<'dashboard' | 'usage' | 'claude'>('dashboard')
 
   const {
     todos,
@@ -124,13 +136,36 @@ export default function App(): React.JSX.Element {
     setSettingsOpen(true)
   }
 
+  const logDrawer = (
+    <LogDrawer
+      open={logDrawerOpen}
+      dock={logDock}
+      size={logDock === 'bottom' ? logDockHeight : logDockWidth}
+      onToggle={() => setLogDrawerOpen(!logDrawerOpen)}
+      onDock={setLogDock}
+      onResize={logDock === 'bottom' ? setLogDockHeight : setLogDockWidth}
+      logs={logs}
+      processes={processes}
+      projects={projects}
+      onStopAll={() => void stopAll()}
+      onStopProcess={(processId) => void stopProcess(processId)}
+      onClear={() => clearLogs()}
+      onClearProcess={clearProcessLogs}
+    />
+  )
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex min-h-0 flex-1">
         <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
           projects={projects}
           selectedProjectId={selectedProjectId}
-          onSelect={selectProject}
+          onSelect={(id) => {
+            selectProject(id)
+            if (view !== 'claude') setView('dashboard')
+          }}
           todos={todos}
           notes={notes}
           onAddTodo={addTodo}
@@ -148,6 +183,11 @@ export default function App(): React.JSX.Element {
           onOpenJiraIssue={openIssue}
           creatingBranches={creatingBranches}
           transitioning={transitioning}
+          usageActive={view === 'usage'}
+          onOpenUsage={() => setView('usage')}
+          claudeActive={view === 'claude'}
+          onOpenClaude={() => setView('claude')}
+          onOpenDashboard={() => setView('dashboard')}
           onCreateBranches={async (issue) => {
             setCreatingBranches(true)
             try {
@@ -197,8 +237,21 @@ export default function App(): React.JSX.Element {
           }}
         />
 
+        {view === 'usage' ? (
+          <ClaudeUsagePage active={view === 'usage'} onOpenSettings={openAppSettings} />
+        ) : view === 'claude' ? (
+          <ClaudePage
+            project={selectedProject}
+            folder={selectedProject ? getProjectFolders(selectedProject)[0] : undefined}
+            branch={
+              selectedProject
+                ? gitByPath[getProjectFolders(selectedProject)[0] ?? '']?.branch
+                : undefined
+            }
+          />
+        ) : (
         <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between gap-3 border-b border-white/8 px-6 py-4">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-4 py-4 sm:px-6">
             <div>
               <h1 className="font-display text-2xl font-semibold tracking-tight">Dashboard</h1>
               <p className="text-sm text-white/45">
@@ -231,7 +284,7 @@ export default function App(): React.JSX.Element {
             }}
           />
 
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
             {projects.length === 0 ? (
               <div className="flex h-full min-h-[280px] flex-col items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.02] px-6 text-center">
                 <p className="font-display text-xl font-semibold">No projects yet</p>
@@ -245,7 +298,7 @@ export default function App(): React.JSX.Element {
                 </button>
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-4">
                 {projects.map((project) => (
                   <ProjectCard
                     key={project.id}
@@ -269,17 +322,11 @@ export default function App(): React.JSX.Element {
             )}
           </div>
         </main>
+        )}
+        {logDock === 'right' && logDrawer}
       </div>
 
-      <LogDrawer
-        open={logDrawerOpen}
-        onToggle={() => setLogDrawerOpen(!logDrawerOpen)}
-        logs={logs}
-        processes={processes}
-        projects={projects}
-        onStopAll={() => void stopAll()}
-        onClear={() => clearLogs()}
-      />
+      {logDock === 'bottom' && logDrawer}
 
       <SettingsModal
         open={settingsOpen}
@@ -326,7 +373,12 @@ export default function App(): React.JSX.Element {
       />
 
       {toast && (
-        <div className="pointer-events-none fixed bottom-16 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-white/10 bg-surface-800 px-4 py-2 text-sm shadow-panel">
+        <div
+          className="pointer-events-none fixed left-1/2 z-50 -translate-x-1/2 rounded-lg border border-white/10 bg-surface-800 px-4 py-2 text-sm shadow-panel"
+          style={{
+            bottom: logDock === 'bottom' ? (logDrawerOpen ? logDockHeight + 16 : 60) : 24
+          }}
+        >
           {toast}
         </div>
       )}

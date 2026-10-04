@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { FolderOpen, Plus, Trash2, X } from 'lucide-react'
+import { UpdateSection } from './UpdateSection'
 import { randomUUID } from './id'
 import type {
   AppSettings,
@@ -349,6 +350,8 @@ export function SettingsModal({
             </>
           ) : tab === 'app' ? (
             <>
+              <UpdateSection />
+
               <label className="flex items-center gap-3 text-sm">
                 <input
                   type="checkbox"

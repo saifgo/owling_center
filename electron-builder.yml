@@ -29,3 +29,7 @@ mac:
 linux:
   icon: build/icon.png
 npmRebuild: true
+publish:
+  provider: github
+  owner: saifgo
+  repo: TS_controle_pannel

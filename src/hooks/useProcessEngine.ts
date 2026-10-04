@@ -7,8 +7,10 @@ export function useProcessEngine(): {
   logs: ReturnType<typeof useUiStore.getState>['logs']
   launch: (projectId: string) => Promise<LaunchResult>
   stopProject: (projectId: string) => Promise<void>
+  stopProcess: (processId: string) => Promise<void>
   stopAll: () => Promise<void>
   clearLogs: (projectId?: string) => void
+  clearProcessLogs: (processId: string) => void
 } {
   const processes = useUiStore((s) => s.processes)
   const logs = useUiStore((s) => s.logs)
@@ -17,6 +19,7 @@ export function useProcessEngine(): {
   const removeProcess = useUiStore((s) => s.removeProcess)
   const appendLog = useUiStore((s) => s.appendLog)
   const clearLogs = useUiStore((s) => s.clearLogs)
+  const clearProcessLogs = useUiStore((s) => s.clearProcessLogs)
   const setToast = useUiStore((s) => s.setToast)
   const setLogDrawerOpen = useUiStore((s) => s.setLogDrawerOpen)
 
@@ -69,11 +72,22 @@ export function useProcessEngine(): {
     [setProcesses, setToast]
   )
 
+  const stopProcess = useCallback(
+    async (processId: string) => {
+      const current = useUiStore.getState().processes.find((p) => p.id === processId)
+      const ok = await window.devcenter.process.stop(processId)
+      const list = await window.devcenter.process.list()
+      setProcesses(list)
+      setToast(ok ? `Stopped ${current?.name ?? 'process'}` : 'Process already stopped')
+    },
+    [setProcesses, setToast]
+  )
+
   const stopAll = useCallback(async () => {
     const count = await window.devcenter.process.stopAll()
     setProcesses([])
     setToast(`Stopped all (${count})`)
   }, [setProcesses, setToast])
 
-  return { processes, logs, launch, stopProject, stopAll, clearLogs }
+  return { processes, logs, launch, stopProject, stopProcess, stopAll, clearLogs, clearProcessLogs }
 }

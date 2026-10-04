@@ -1,16 +1,22 @@
 import { useState } from 'react'
 import {
+  BarChart3,
   CheckSquare,
+  MessageSquare,
   ExternalLink,
   GitBranch,
+  ListTodo,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RefreshCw,
   StickyNote,
   Ticket,
-  Trash2,
-  ListTodo
+  Trash2
 } from 'lucide-react'
+import { formatResetsIn, remainingPercent } from '../../shared/claudeUsage'
 import type {
+  ClaudeLimitWindow,
   JiraAssigneeFilter,
   JiraIssue,
   Project,
@@ -18,8 +24,11 @@ import type {
   TodoItem
 } from '../../shared/types'
 import logoUrl from '../assets/logo.png'
+import { useClaudeLimits } from '../hooks/useClaudeLimits'
 
 interface SidebarProps {
+  collapsed: boolean
+  onToggleCollapsed: () => void
   projects: Project[]
   selectedProjectId: string | null
   onSelect: (id: string) => void
@@ -44,9 +53,143 @@ interface SidebarProps {
   onMoveToInReview: (issue: JiraIssue) => Promise<void>
   transitioning: boolean
   onCreateJiraFromNote: (text: string) => Promise<void>
+  usageActive: boolean
+  onOpenUsage: () => void
+  claudeActive: boolean
+  onOpenClaude: () => void
+  onOpenDashboard: () => void
+}
+
+function leftTone(left: number): string {
+  if (left <= 15) return 'text-danger'
+  if (left <= 40) return 'text-warn'
+  return 'text-white'
+}
+
+function shortLimitLabel(window: ClaudeLimitWindow): string {
+  if (window.kind === 'session' || window.id === 'five_hour') return 'Session'
+  if (window.id === 'seven_day') return 'Weekly'
+  return window.label.replace(/^Weekly · /, '')
+}
+
+function orderedWindows(windows: ClaudeLimitWindow[]): ClaudeLimitWindow[] {
+  const rank = (window: ClaudeLimitWindow): number => {
+    if (window.kind === 'session' || window.id === 'five_hour') return 0
+    if (window.id === 'seven_day') return 1
+    return 2
+  }
+  return [...windows].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label))
+}
+
+function ClaudeLimitMeters({
+  collapsed,
+  onOpenUsage
+}: {
+  collapsed: boolean
+  onOpenUsage: () => void
+}): React.JSX.Element {
+  const { limits, now } = useClaudeLimits()
+  const windows = orderedWindows(limits?.windows ?? [])
+  const ready = limits?.status === 'authenticated' && windows.length > 0
+
+  if (collapsed) {
+    if (!ready) return <></>
+    return (
+      <div className="flex w-full flex-col items-center gap-1 px-1">
+        {windows.map((window) => {
+          const left = remainingPercent(window.usedPercent)
+          const reset = formatResetsIn(window, now)
+          const label = shortLimitLabel(window)
+          return (
+            <button
+              key={window.id}
+              type="button"
+              title={`${label}: ${left}% left${reset ? `, ends in ${reset}` : ''}`}
+              aria-label={`${label}, ${left}% left${reset ? `, ends in ${reset}` : ''}`}
+              onClick={onOpenUsage}
+              className="flex w-full flex-col items-center gap-0 rounded-md py-0.5 text-white/70 transition hover:bg-white/5"
+            >
+              <span className="text-[9px] font-medium uppercase tracking-wide text-white/40">
+                {label.slice(0, 3)}
+              </span>
+              <span className={`font-display text-sm font-semibold tabular-nums ${leftTone(left)}`}>
+                {left}%
+              </span>
+              {reset && (
+                <span className="text-[11px] font-medium tabular-nums text-white/80">
+                  {reset.split(' ')[0]}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <section>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-white/50">Claude</p>
+        {limits?.plan && <span className="text-[10px] text-white/35">{limits.plan}</span>}
+      </div>
+
+      {!limits && <p className="text-xs text-white/35">Reading Claude limits…</p>}
+
+      {limits && !ready && (
+        <button
+          type="button"
+          onClick={onOpenUsage}
+          className="w-full rounded-md px-1 py-1 text-left text-xs text-white/45 transition hover:bg-white/5 hover:text-white/70"
+        >
+          {limits.message ?? 'Open Usage to see Claude limits.'}
+        </button>
+      )}
+
+      {ready && (
+        <div className="space-y-0.5">
+          {windows.map((window) => {
+            const left = remainingPercent(window.usedPercent)
+            const reset = formatResetsIn(window, now)
+            const label = shortLimitLabel(window)
+            return (
+              <button
+                key={window.id}
+                type="button"
+                onClick={onOpenUsage}
+                className="block w-full rounded-md px-1 py-0.5 text-left transition hover:bg-white/5"
+                title={`${label}: ${left}% left${reset ? `, ends in ${reset}` : ''}`}
+              >
+                <span className="block text-xs leading-none text-white/45">{label}</span>
+                <span className="flex items-baseline justify-between gap-3 leading-none">
+                  <span className="font-display text-lg font-semibold leading-none tabular-nums tracking-tight text-white">
+                    {reset ? `ends in ${reset}` : '—'}
+                  </span>
+                  <span
+                    className={`shrink-0 font-display text-lg font-semibold leading-none tabular-nums tracking-tight ${leftTone(left)}`}
+                  >
+                    {left}% left
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function projectMark(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase()
 }
 
 export function Sidebar({
+  collapsed,
+  onToggleCollapsed,
   projects,
   selectedProjectId,
   onSelect,
@@ -70,7 +213,12 @@ export function Sidebar({
   onMoveToInProgress,
   onMoveToInReview,
   transitioning,
-  onCreateJiraFromNote
+  onCreateJiraFromNote,
+  usageActive,
+  onOpenUsage,
+  claudeActive,
+  onOpenClaude,
+  onOpenDashboard
 }: SidebarProps): React.JSX.Element {
   const [todoText, setTodoText] = useState('')
   const [noteText, setNoteText] = useState('')
@@ -79,22 +227,142 @@ export function Sidebar({
   const hasJiraKey = Boolean(selected?.jira?.projectKey)
   const selectedIssue = jiraIssues.find((i) => i.key === selectedIssueKey) ?? null
 
-  return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-r border-white/8 bg-surface-950/50">
-      <div className="border-b border-white/8 px-4 py-4">
-        <div className="flex items-center gap-3">
-          <img
-            src={logoUrl}
-            alt="Owling Center"
-            className="h-9 w-9 shrink-0 rounded-md object-contain"
-          />
-          <div className="min-w-0">
-            <p className="font-display text-xl font-semibold tracking-tight text-accent">
-              Owling Center
-            </p>
-            <p className="mt-0.5 text-xs text-white/40">The power of wisdom</p>
-          </div>
+  if (collapsed) {
+    return (
+      <aside className="flex h-full w-14 shrink-0 flex-col items-center overflow-hidden border-r border-white/8 bg-surface-950/50 transition-[width] duration-200 ease-out">
+        <div className="flex w-full flex-col items-center gap-2 border-b border-white/8 px-2 py-3">
+          <button
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-white/45 transition hover:bg-white/5 hover:text-white/80"
+            title="Expand sidebar"
+            aria-label="Expand sidebar"
+            aria-expanded={false}
+            onClick={onToggleCollapsed}
+          >
+            <PanelLeftOpen size={16} />
+          </button>
+          <button
+            type="button"
+            className="rounded-md transition hover:bg-white/5"
+            title="Owling Center"
+            onClick={onOpenDashboard}
+          >
+            <img
+              src={logoUrl}
+              alt="Owling Center"
+              className="h-9 w-9 rounded-md object-contain"
+            />
+          </button>
         </div>
+        <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto px-2 py-3">
+          <ClaudeLimitMeters collapsed onOpenUsage={onOpenUsage} />
+          <button
+            type="button"
+            title="Claude"
+            aria-label="Claude"
+            onClick={onOpenClaude}
+            className={[
+              'flex h-9 w-9 items-center justify-center rounded-md transition',
+              claudeActive ? 'bg-accent/15 text-accent' : 'text-white/70 hover:bg-white/5'
+            ].join(' ')}
+          >
+            <MessageSquare size={16} />
+          </button>
+          <button
+            type="button"
+            title="Usage"
+            aria-label="Usage"
+            onClick={onOpenUsage}
+            className={[
+              'flex h-9 w-9 items-center justify-center rounded-md transition',
+              usageActive ? 'bg-accent/15 text-accent' : 'text-white/70 hover:bg-white/5'
+            ].join(' ')}
+          >
+            <BarChart3 size={16} />
+          </button>
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              title={p.name}
+              aria-label={p.name}
+              onClick={() => {
+                onSelect(p.id)
+                setSelectedIssueKey(null)
+              }}
+              className={[
+                'flex h-9 w-9 items-center justify-center rounded-md text-[11px] font-semibold tracking-wide transition',
+                selectedProjectId === p.id
+                  ? 'bg-accent/15 text-accent'
+                  : 'text-white/70 hover:bg-white/5'
+              ].join(' ')}
+            >
+              {projectMark(p.name)}
+            </button>
+          ))}
+        </div>
+      </aside>
+    )
+  }
+
+  return (
+    <aside className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-r border-white/8 bg-surface-950/50 transition-[width] duration-200 ease-out">
+      <div className="border-b border-white/8 px-4 py-4">
+        <div className="flex items-start gap-2">
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            onClick={onOpenDashboard}
+          >
+            <img
+              src={logoUrl}
+              alt="Owling Center"
+              className="h-9 w-9 shrink-0 rounded-md object-contain"
+            />
+            <div className="min-w-0">
+              <p className="font-display text-xl font-semibold tracking-tight text-accent">
+                Owling Center
+              </p>
+              <p className="mt-0.5 text-xs text-white/40">The power of wisdom</p>
+            </div>
+          </button>
+          <button
+            type="button"
+            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white/45 transition hover:bg-white/5 hover:text-white/80"
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+            aria-expanded
+            onClick={onToggleCollapsed}
+          >
+            <PanelLeftClose size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div className="border-b border-white/8 px-3 py-2">
+        <ClaudeLimitMeters collapsed={false} onOpenUsage={onOpenUsage} />
+        <button
+          type="button"
+          onClick={onOpenClaude}
+          className={[
+            'mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition',
+            claudeActive ? 'bg-accent/15 text-accent' : 'text-white/70 hover:bg-white/5'
+          ].join(' ')}
+        >
+          <MessageSquare size={15} />
+          Claude
+        </button>
+        <button
+          type="button"
+          onClick={onOpenUsage}
+          className={[
+            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition',
+            usageActive ? 'bg-accent/15 text-accent' : 'text-white/70 hover:bg-white/5'
+          ].join(' ')}
+        >
+          <BarChart3 size={15} />
+          Usage
+        </button>
       </div>
 
       <div className="border-b border-white/8 px-3 py-3">

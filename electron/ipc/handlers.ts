@@ -1,5 +1,12 @@
 import { ipcMain, app, dialog, BrowserWindow } from 'electron'
-import type { Project, AppSettings, JiraSettings, JiraAssigneeFilter } from '../../shared/types'
+import type {
+  ClaudePromptRequest,
+  ClaudeUsageRange,
+  Project,
+  AppSettings,
+  JiraSettings,
+  JiraAssigneeFilter
+} from '../../shared/types'
 import { getProjects, upsertProject, deleteProject, getProject, getSettings, saveSettings } from '../store'
 import { ProcessRegistry } from '../process/registry'
 import { launchProject } from '../process/launcher'
@@ -25,6 +32,9 @@ import {
   transitionToInProgress,
   transitionToInReview
 } from '../jira/client'
+import { summarizeClaudeSessions } from '../claude/sessions'
+import { getClaudeLimits, loginClaude, logoutClaude } from '../claude/usage'
+import { readClaudeThread, resetClaude, respondClaude, runClaudePrompt, stopClaude } from '../claude/agent'
 
 let registry: ProcessRegistry | null = null
 
@@ -192,5 +202,33 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('jira:moveToInReview', async (_e, issueKey: string) => {
     return transitionToInReview(issueKey)
+  })
+
+  ipcMain.handle('claude:usage', async (_e, range: ClaudeUsageRange) => {
+    const safe: ClaudeUsageRange =
+      range === '24h' || range === '7d' || range === '30d' || range === '90d' ? range : '7d'
+    return summarizeClaudeSessions(safe)
+  })
+
+  ipcMain.handle('claude:limits', async () => getClaudeLimits())
+
+  ipcMain.handle('claude:login', async () => loginClaude())
+
+  ipcMain.handle('claude:logout', async () => logoutClaude())
+
+  ipcMain.handle('claude:thread', (_e, projectId: string) => readClaudeThread(projectId))
+
+  ipcMain.handle('claude:prompt', async (e, request: ClaudePromptRequest) => {
+    return runClaudePrompt(request, e.sender)
+  })
+
+  ipcMain.handle('claude:stop', (_e, projectId: string) => stopClaude(projectId))
+
+  ipcMain.handle('claude:respond', (_e, projectId: string, id: string, allowed: boolean) => {
+    return respondClaude(projectId, id, allowed)
+  })
+
+  ipcMain.handle('claude:reset', (e, projectId: string) => {
+    resetClaude(projectId, e.sender)
   })
 }

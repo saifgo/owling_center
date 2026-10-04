@@ -7,6 +7,7 @@ import { ProcessRegistry } from './process/registry'
 import { registerIpcHandlers, setRegistry } from './ipc/handlers'
 import { initDb, closeDb } from './db'
 import { getSettings } from './store'
+import { registerUpdater } from './updater'
 
 const APP_NAME = 'Owling Center'
 const SPLASH_MIN_MS = 1000
@@ -163,6 +164,7 @@ app.whenReady().then(async () => {
   registry = new ProcessRegistry(() => mainWindow)
   setRegistry(registry)
   registerIpcHandlers()
+  registerUpdater()
 
   const settings = getSettings()
   app.setLoginItemSettings({
