@@ -1,15 +1,12 @@
 import { spawn } from 'child_process'
-import { readFile, rename, writeFile } from 'fs/promises'
+import { readFile } from 'fs/promises'
 import { homedir } from 'os'
 import path from 'path'
 import { shell } from 'electron'
 import type { ClaudeAuthStatus, ClaudeLimitWindow, ClaudeLimits } from '../../shared/types'
 
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
-const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
-const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const BETA = 'oauth-2025-04-20'
-const REFRESH_SKEW_MS = 5 * 60_000
 const SESSION_MINS = 5 * 60
 const WEEK_MINS = 7 * 24 * 60
 
@@ -18,6 +15,12 @@ interface OAuthBlock {
   refreshToken?: string
   expiresAt?: number
   subscriptionType?: string
+}
+
+interface CredentialFile {
+  raw: Record<string, unknown>
+  oauth?: OAuthBlock
+  unreadable?: boolean
 }
 
 function credentialsPath(): string {
@@ -39,23 +42,46 @@ function limits(partial: Omit<ClaudeLimits, 'checkedAt' | 'windows'> & { windows
   }
 }
 
-async function readCredentials(): Promise<{ raw: Record<string, unknown>; oauth?: OAuthBlock } | null> {
-  try {
-    const text = await readFile(credentialsPath(), 'utf8')
-    const raw = JSON.parse(text) as Record<string, unknown>
-    const block = raw.claudeAiOauth
-    if (!block || typeof block !== 'object') return { raw }
-    return { raw, oauth: block as OAuthBlock }
-  } catch {
-    return null
-  }
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function writeCredentials(raw: Record<string, unknown>): Promise<void> {
+async function readCredentials(): Promise<CredentialFile | null> {
   const file = credentialsPath()
-  const tmp = `${file}.tmp`
-  await writeFile(tmp, JSON.stringify(raw, null, 2), 'utf8')
-  await rename(tmp, file)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let text = ''
+    try {
+      text = await readFile(file, 'utf8')
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') return null
+      if (attempt < 2) {
+        await delay(40)
+        continue
+      }
+      return { raw: {}, unreadable: true }
+    }
+    if (!text.trim()) {
+      if (attempt < 2) {
+        await delay(40)
+        continue
+      }
+      return null
+    }
+    try {
+      const raw = JSON.parse(text) as Record<string, unknown>
+      const block = raw.claudeAiOauth
+      if (!block || typeof block !== 'object') return { raw }
+      return { raw, oauth: block as OAuthBlock }
+    } catch {
+      if (attempt < 2) {
+        await delay(40)
+        continue
+      }
+      return { raw: {}, unreadable: true }
+    }
+  }
+  return { raw: {}, unreadable: true }
 }
 
 function run(command: string, args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -130,35 +156,6 @@ function parseAuthText(text: string): { email?: string; subscriptionType?: strin
   }
 }
 
-async function refreshAccessToken(raw: Record<string, unknown>, oauth: OAuthBlock): Promise<string | undefined> {
-  if (!oauth.refreshToken) return oauth.accessToken
-  const expiresAt = typeof oauth.expiresAt === 'number' ? oauth.expiresAt : 0
-  if (oauth.accessToken && expiresAt - Date.now() > REFRESH_SKEW_MS) return oauth.accessToken
-
-  const response = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      grant_type: 'refresh_token',
-      refresh_token: oauth.refreshToken,
-      client_id: CLIENT_ID,
-      scope: 'user:profile user:inference user:sessions:claude_code user:mcp_servers'
-    })
-  })
-  if (!response.ok) return oauth.accessToken
-  const body = (await response.json()) as { access_token?: string; refresh_token?: string; expires_in?: number }
-  if (!body.access_token) return oauth.accessToken
-  const next: OAuthBlock = {
-    ...oauth,
-    accessToken: body.access_token,
-    refreshToken: body.refresh_token || oauth.refreshToken,
-    expiresAt: Date.now() + (body.expires_in ?? 3600) * 1000
-  }
-  raw.claudeAiOauth = next
-  await writeCredentials(raw)
-  return next.accessToken
-}
-
 function asWindow(
   id: string,
   kind: ClaudeLimitWindow['kind'],
@@ -226,20 +223,31 @@ async function fetchUsage(token: string): Promise<Record<string, unknown>> {
       accept: 'application/json'
     }
   })
-  if (response.status === 401 || response.status === 403) {
-    throw new Error('signed-out')
-  }
+  if (response.status === 401) throw new Error('rejected')
   if (!response.ok) throw new Error('unavailable')
   return (await response.json()) as Record<string, unknown>
 }
 
+const SAVED_SIGN_IN = 'Claude still has your sign-in. Limits will show after Claude refreshes it.'
+
 export async function getClaudeLimits(): Promise<ClaudeLimits> {
   const installed = await claudeExists()
-  const creds = await readCredentials()
   let authHint: ReturnType<typeof parseAuthText> = {}
   if (installed) {
     const status = await run('claude', ['auth', 'status'], 15000)
     authHint = parseAuthText(`${status.stdout}\n${status.stderr}`)
+  }
+
+  // Read after `claude auth status` so a refresh Claude Code just saved is visible.
+  // This app never writes ~/.claude/.credentials.json. Claude Code rotates that
+  // refresh token itself, and a second refresh invalidates the login.
+  const creds = await readCredentials()
+
+  if (creds?.unreadable) {
+    return limits({
+      status: 'unavailable',
+      message: 'Could not read Claude sign-in data. It was left unchanged.'
+    })
   }
 
   if (!creds?.oauth?.accessToken && !creds?.oauth?.refreshToken) {
@@ -262,32 +270,34 @@ export async function getClaudeLimits(): Promise<ClaudeLimits> {
     return limits({ status: 'api-key', message: 'This account has no subscription limits.' })
   }
 
-  let token: string | undefined
-  try {
-    token = await refreshAccessToken(creds.raw, oauth)
-  } catch {
-    token = oauth.accessToken
-  }
-  if (!token) {
-    return limits({
-      status: 'signed-out',
-      message: 'Sign in with Claude to see session and weekly limits.'
-    })
-  }
-
   const plan = planLabel(authHint.subscriptionType ?? oauth.subscriptionType)
   const email = authHint.email
+  if (!oauth.accessToken) {
+    return limits({
+      status: 'unavailable',
+      email,
+      plan,
+      message: SAVED_SIGN_IN
+    })
+  }
 
   try {
     let body: Record<string, unknown>
     try {
-      body = await fetchUsage(token)
+      body = await fetchUsage(oauth.accessToken)
     } catch (error) {
-      const rejected = error instanceof Error && error.message === 'signed-out'
-      if (!rejected || !oauth.refreshToken) throw error
-      const refreshed = await refreshAccessToken(creds.raw, { ...oauth, accessToken: undefined, expiresAt: 0 })
-      if (!refreshed || refreshed === token) throw error
-      body = await fetchUsage(refreshed)
+      const rejected = error instanceof Error && error.message === 'rejected'
+      if (!rejected) throw error
+      const again = await readCredentials()
+      if (again?.unreadable) throw new Error('unavailable')
+      const nextToken = again?.oauth?.accessToken
+      if (nextToken && nextToken !== oauth.accessToken) {
+        body = await fetchUsage(nextToken)
+      } else if (again?.oauth?.refreshToken || oauth.refreshToken) {
+        return limits({ status: 'unavailable', email, plan, message: SAVED_SIGN_IN })
+      } else {
+        throw new Error('signed-out')
+      }
     }
     const windows = windowsFromUsage(body)
     if (windows.length === 0) {
@@ -301,12 +311,16 @@ export async function getClaudeLimits(): Promise<ClaudeLimits> {
     return limits({ status: 'authenticated', email, plan, windows })
   } catch (error) {
     const signedOut = error instanceof Error && error.message === 'signed-out'
-    const status: ClaudeAuthStatus = signedOut ? 'signed-out' : 'unavailable'
+    const rejected = error instanceof Error && error.message === 'rejected'
+    if (rejected && oauth.refreshToken) {
+      return limits({ status: 'unavailable', email, plan, message: SAVED_SIGN_IN })
+    }
+    const status: ClaudeAuthStatus = signedOut || rejected ? 'signed-out' : 'unavailable'
     return limits({
       status,
       email,
       plan,
-      message: signedOut ? 'Sign in to Claude again to read limits.' : 'Could not read limits.'
+      message: signedOut || rejected ? 'Sign in to Claude again to read limits.' : 'Could not read limits.'
     })
   }
 }

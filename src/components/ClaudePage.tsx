@@ -32,10 +32,7 @@ export function ClaudePage({ project, folder, branch }: ClaudePageProps): React.
     node.scrollTop = node.scrollHeight
   }, [thread.messages, thread.running])
 
-  const signedOut =
-    limits?.status === 'signed-out' ||
-    limits?.status === 'missing-cli' ||
-    limits?.status === 'unavailable'
+  const signedOut = limits?.status === 'signed-out' || limits?.status === 'missing-cli'
   const canSend = Boolean(project && folder && prompt.trim() && thread.ready && !thread.running && !signedOut)
 
   const submit = (): void => {
